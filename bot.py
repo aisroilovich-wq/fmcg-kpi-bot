@@ -20,7 +20,8 @@ from database import Database
 from kpi_engine import KPIEngine
 from reports import ReportGenerator
 from config import Config
-from sheets_sync import get_monthly_plan_from_sheets, get_settings_from_sheets
+from sheets_sync import (get_monthly_plan, get_sozlamalar,
+                         get_supervisor_report, get_rop_report, get_jamoa_hisobot)
 
 # Logging
 logging.basicConfig(
@@ -672,41 +673,112 @@ async def sinxron(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     user = db.get_user(user_id)
 
-    if not user or user['role'] != 'rop':
-        await update.message.reply_text("❌ Bu buyruq faqat ROP uchun.")
+    if not user:
+        await update.message.reply_text("Avval /start bilan ro'yxatdan o'ting.")
         return
 
+    role = user['role']
     await update.message.reply_text("🔄 Google Sheets dan ma'lumot olinmoqda...")
 
     today = date.today()
-    results = []
 
-    # Oylik reja
-    plan_data = get_monthly_plan_from_sheets()
-    if plan_data:
-        jamoa_reja = plan_data['jamoa_reja']
-        db.set_monthly_plan(today.year, today.month, jamoa_reja, user_id)
-        agent_count = len(db.get_all_agents())
-        agent_plan = jamoa_reja // agent_count if agent_count > 0 else 0
-        daily_plan = agent_plan // Config.WORKING_DAYS
-        results.append(
-            f"✅ *Oylik reja yangilandi:*\n"
-            f"   Jamoa: {jamoa_reja:,} so'm\n"
-            f"   1 agent: {agent_plan:,} so'm\n"
-            f"   Kunlik: {daily_plan:,} so'm"
-        )
-    else:
-        results.append("⚠️ Oylik reja olinmadi (Sheets da topilmadi)")
+    if role == 'agent':
+        # Agent: o'z oylik rejasi
+        plan_data = get_monthly_plan()
+        if plan_data:
+            jamoa_reja = plan_data['jamoa_reja']
+            agent_soni = plan_data['agent_soni']
+            agent_plan = jamoa_reja // agent_soni if agent_soni > 0 else 0
+            daily_plan = agent_plan // Config.WORKING_DAYS
+            db.set_monthly_plan(today.year, today.month, jamoa_reja, user_id)
+            text = (
+                f"📊 *{user['name']} — Reja ma'lumotlari*\n\n"
+                f"📋 Sizning oylik reja: *{agent_plan:,} so'm*\n"
+                f"📅 Kunlik reja: *{daily_plan:,} so'm*\n"
+                f"👥 Jamoada: {agent_soni} ta agent\n\n"
+                f"_Google Sheets dan yangilandi ✅_"
+            )
+        else:
+            text = "⚠️ Google Sheets dan ma'lumot olinmadi."
+        await update.message.reply_text(text, parse_mode='Markdown')
 
-    # Sozlamalar
-    settings = get_settings_from_sheets()
-    if settings:
-        results.append(f"✅ *Sozlamalar yangilandi:* {len(settings)} parametr")
-    else:
-        results.append("ℹ️ Sozlamalar (config.py da o'rnatilgan)")
+    elif role == 'supervisor':
+        # Supervisor: jamoa holati + o'z maoshi
+        sup_data = get_supervisor_report()
+        jamoa_data = get_jamoa_hisobot()
+        plan_data = get_monthly_plan()
 
-    text = "📊 *Google Sheets sinxronizatsiya:*\n\n" + "\n\n".join(results)
-    await update.message.reply_text(text, parse_mode='Markdown')
+        if plan_data:
+            db.set_monthly_plan(today.year, today.month, plan_data['jamoa_reja'], user_id)
+
+        text = f"👔 *{user['name']} — Supervisor hisobot*\n\n"
+
+        if jamoa_data:
+            status = "✅" if jamoa_data.get('bajarilish_pct', 0) >= 100 else (
+                "🟡" if jamoa_data.get('bajarilish_pct', 0) >= 80 else "🔴")
+            text += (
+                f"📈 *Jamoa natija:*\n"
+                f"🎯 Reja: {jamoa_data.get('jamoa_reja', 0):,} so'm\n"
+                f"💰 Haqiqiy: {jamoa_data.get('haqiqiy_savdo', 0):,} so'm\n"
+                f"{status} Bajarildi: {jamoa_data.get('bajarilish_pct', 0)}%\n\n"
+            )
+
+        if sup_data:
+            text += (
+                f"💵 *Sizning maoshingiz:*\n"
+                f"├ Fiksa: {sup_data.get('fiksa', 0):,} so'm\n"
+                f"├ Komanda bonus: {sup_data.get('komanda_bonus', 0):,} so'm\n"
+                f"├ Plan bonus: {sup_data.get('plan_bonus', 0):,} so'm\n"
+                f"└ *JAMI: {sup_data.get('jami', 0):,} so'm*\n"
+            )
+
+        text += "\n_Google Sheets dan yangilandi ✅_"
+        await update.message.reply_text(text, parse_mode='Markdown')
+
+    else:  # rop
+        # ROP: hammasi
+        rop_data = get_rop_report()
+        jamoa_data = get_jamoa_hisobot()
+        plan_data = get_monthly_plan()
+
+        if plan_data:
+            db.set_monthly_plan(today.year, today.month, plan_data['jamoa_reja'], user_id)
+
+        text = f"🏆 *{user['name']} — ROP to'liq hisobot*\n\n"
+
+        if jamoa_data:
+            status = "✅" if jamoa_data.get('bajarilish_pct', 0) >= 100 else (
+                "🟡" if jamoa_data.get('bajarilish_pct', 0) >= 80 else "🔴")
+            text += (
+                f"📈 *Jamoa natija:*\n"
+                f"🎯 Reja: {jamoa_data.get('jamoa_reja', 0):,} so'm\n"
+                f"💰 Haqiqiy: {jamoa_data.get('haqiqiy_savdo', 0):,} so'm\n"
+                f"{status} Bajarildi: {jamoa_data.get('bajarilish_pct', 0)}%\n"
+                f"👥 Agentlar: {jamoa_data.get('agent_soni', 0)} ta\n\n"
+            )
+
+        if rop_data:
+            text += (
+                f"💵 *ROP maoshi:*\n"
+                f"├ Fiksa: {rop_data.get('fiksa', 0):,} so'm\n"
+                f"├ Jamoa bonusi (2%): {rop_data.get('jamoa_bonus', 0):,} so'm\n"
+                f"├ Plan bonusi: {rop_data.get('plan_bonus', 0):,} so'm\n"
+                f"├ Spets zadacha: {rop_data.get('spets_bonus', 0):,} so'm\n"
+                f"└ *JAMI: {rop_data.get('jami', 0):,} so'm*\n\n"
+                f"📊 Bajarilish: {rop_data.get('bajarilish_pct', 0)}%\n"
+            )
+
+        if plan_data:
+            agent_plan = plan_data['jamoa_reja'] // plan_data['agent_soni'] if plan_data['agent_soni'] > 0 else 0
+            text += (
+                f"\n📋 *Reja taqsimoti:*\n"
+                f"🏢 Jamoa: {plan_data['jamoa_reja']:,} so'm\n"
+                f"👤 1 agent: {agent_plan:,} so'm\n"
+                f"📅 Kunlik: {agent_plan // Config.WORKING_DAYS:,} so'm\n"
+            )
+
+        text += "\n_Google Sheets dan yangilandi ✅_"
+        await update.message.reply_text(text, parse_mode='Markdown')
 
 
 # ═══════════════════════════════════════════════════════════
