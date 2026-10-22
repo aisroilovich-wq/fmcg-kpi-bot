@@ -20,6 +20,7 @@ from database import Database
 from kpi_engine import KPIEngine
 from reports import ReportGenerator
 from config import Config
+from sheets_sync import get_monthly_plan_from_sheets, get_settings_from_sheets
 
 # Logging
 logging.basicConfig(
@@ -664,6 +665,51 @@ async def bonus(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════════════════
+# /sinxron — Google Sheets dan ma'lumot yangilash (ROP)
+# ═══════════════════════════════════════════════════════════
+
+async def sinxron(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user = db.get_user(user_id)
+
+    if not user or user['role'] != 'rop':
+        await update.message.reply_text("❌ Bu buyruq faqat ROP uchun.")
+        return
+
+    await update.message.reply_text("🔄 Google Sheets dan ma'lumot olinmoqda...")
+
+    today = date.today()
+    results = []
+
+    # Oylik reja
+    plan_data = get_monthly_plan_from_sheets()
+    if plan_data:
+        jamoa_reja = plan_data['jamoa_reja']
+        db.set_monthly_plan(today.year, today.month, jamoa_reja, user_id)
+        agent_count = len(db.get_all_agents())
+        agent_plan = jamoa_reja // agent_count if agent_count > 0 else 0
+        daily_plan = agent_plan // Config.WORKING_DAYS
+        results.append(
+            f"✅ *Oylik reja yangilandi:*\n"
+            f"   Jamoa: {jamoa_reja:,} so'm\n"
+            f"   1 agent: {agent_plan:,} so'm\n"
+            f"   Kunlik: {daily_plan:,} so'm"
+        )
+    else:
+        results.append("⚠️ Oylik reja olinmadi (Sheets da topilmadi)")
+
+    # Sozlamalar
+    settings = get_settings_from_sheets()
+    if settings:
+        results.append(f"✅ *Sozlamalar yangilandi:* {len(settings)} parametr")
+    else:
+        results.append("ℹ️ Sozlamalar (config.py da o'rnatilgan)")
+
+    text = "📊 *Google Sheets sinxronizatsiya:*\n\n" + "\n\n".join(results)
+    await update.message.reply_text(text, parse_mode='Markdown')
+
+
+# ═══════════════════════════════════════════════════════════
 # /status — O'z holati (Agent)
 # ═══════════════════════════════════════════════════════════
 
@@ -821,6 +867,7 @@ def main():
     app.add_handler(CommandHandler("status", status_cmd))
     app.add_handler(CommandHandler("agentlar", agentlar))
     app.add_handler(CommandHandler("bonus", bonus))
+    app.add_handler(CommandHandler("sinxron", sinxron))
 
     app.add_handler(CallbackQueryHandler(register_callback, pattern="^reg_"))
     app.add_handler(CallbackQueryHandler(update_sale_callback, pattern="^update_sale_|^cancel$"))
