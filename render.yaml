@@ -1,0 +1,15 @@
+services:
+  - type: worker
+    name: fmcg-kpi-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: BOT_TOKEN
+        sync: false   # Render dashboard da kiritasiz
+      - key: ROP_PASSWORD
+        sync: false
+    disk:
+      name: botdata
+      mountPath: /data
+      sizeGB: 1
