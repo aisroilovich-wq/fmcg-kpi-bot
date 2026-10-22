@@ -28,15 +28,11 @@ def get_sheets_client():
             "https://www.googleapis.com/auth/drive"
         ]
 
-        creds_json = os.environ.get("GOOGLE_CREDENTIALS")
-        if creds_json:
-            creds_dict = json.loads(creds_json)
-            creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        else:
-            secret_path = "/etc/secrets/google_credentials.json"
-            local_path = "google_credentials.json"
-            filepath = secret_path if os.path.exists(secret_path) else local_path
-            creds = Credentials.from_service_account_file(filepath, scopes=scopes)
+        secret_path = "/etc/secrets/google_credentials.json"
+        local_path = "google_credentials.json"
+        filepath = secret_path if os.path.exists(secret_path) else local_path
+        logger.info(f"Credentials fayldan o'qilmoqda: {filepath}")
+        creds = Credentials.from_service_account_file(filepath, scopes=scopes)
 
         return gspread.authorize(creds)
     except Exception as e:
