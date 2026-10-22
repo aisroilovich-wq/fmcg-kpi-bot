@@ -1,6 +1,7 @@
 """
 FMCG KPI Telegram Bot
 Multi-role: Agent | Supervisor | ROP/Admin
+Webhook mode for 24/7 hosting
 """
 
 import os
@@ -56,7 +57,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         await update.message.reply_text(
             "👋 *FMCG KPI Botga xush kelibsiz!*\n\n"
-            "Rolингизни танланг:",
+            "Rolingizni tanlang:",
             reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode='Markdown'
         )
@@ -149,7 +150,6 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📈 *Ko'rish:*\n"
             "`/bugun` — bugungi natija\n"
             "`/oy` — oylik jami\n"
-            "`/hafta` — haftalik statistika\n"
             "`/status` — reja bajarish holati\n\n"
             "ℹ️ *Boshqa:*\n"
             "`/reja` — oylik rejam nechchi?\n"
@@ -158,14 +158,12 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = (
             "👔 *SUPERVISOR BUYRUQLARI*\n\n"
             "👥 *Jamoa:*\n"
-            "`/jamoa` — barcha agentlar holati\n"
-            "`/agent [ism]` — bitta agent\n\n"
+            "`/jamoa` — barcha agentlar holati\n\n"
             "📊 *Hisobotlar:*\n"
             "`/hisobot` — bugungi hisobot\n"
-            "`/hafta` — haftalik hisobot\n"
             "`/oy` — oylik hisobot\n\n"
             "⚙️ *Boshqaruv:*\n"
-            "`/eslatma` — agentlarga eslatma yuborish\n"
+            "`/agentlar` — agent ro'yxati\n"
         )
     else:  # rop
         text = (
@@ -173,13 +171,10 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📊 *Hisobotlar:*\n"
             "`/jamoa` — barcha agentlar holati\n"
             "`/hisobot` — bugungi to'liq hisobot\n"
-            "`/hafta` — haftalik hisobot\n"
             "`/oy` — oylik hisobot\n\n"
             "⚙️ *Boshqaruv:*\n"
             "`/reja [miqdor]` — oylik reja o'rnatish\n"
-            "`/kunlik [miqdor]` — kunlik reja o'rnatish\n"
             "`/agentlar` — agent ro'yxati\n"
-            "`/qo'sh [ism] [rol]` — yangi a'zo qo'shish\n"
             "`/bonus` — bonus hisob-kitobi\n"
         )
 
@@ -196,10 +191,6 @@ async def savdo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not user:
         await update.message.reply_text("Avval /start bilan ro'yxatdan o'ting.")
-        return
-
-    if user['role'] not in ('agent', 'supervisor', 'rop'):
-        await update.message.reply_text("Bu buyruq faqat agentlar uchun.")
         return
 
     args = context.args
@@ -384,7 +375,6 @@ async def oy(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     role = user['role']
 
-    # Agent o'z oylik ko'rsatkichini ko'radi
     if role == 'agent':
         await _show_agent_monthly(update, user_id, user)
     else:
@@ -426,10 +416,9 @@ async def _show_agent_monthly(update, user_id, user):
 
     remaining = oylik_reja - total_sales
     if remaining > 0:
-        today_num = today.day
         import calendar
         days_in_month = calendar.monthrange(today.year, today.month)[1]
-        days_left = days_in_month - today_num
+        days_left = days_in_month - today.day
         if days_left > 0:
             per_day_need = remaining // days_left
             text += f"\n📉 Rejaga yetmaydi: {remaining:,} so'm\n"
@@ -527,7 +516,6 @@ async def hisobot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     today = date.today()
 
     if user['role'] == 'agent':
-        # Agent o'z hisobotini ko'radi
         result = kpi.calculate_day(user_id, today)
         sale = db.get_daily_sale(user_id, today)
 
@@ -558,7 +546,6 @@ async def reja(update: Update, context: ContextTypes.DEFAULT_TYPE):
     today = date.today()
 
     if not args:
-        # Ko'rish
         plan = db.get_monthly_plan(today.year, today.month)
         agent_count = len(db.get_all_agents())
 
@@ -583,7 +570,6 @@ async def reja(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # O'rnatish (faqat ROP)
     if user['role'] != 'rop':
         await update.message.reply_text("❌ Reja faqat ROP tomonidan o'rnatiladi.")
         return
@@ -740,17 +726,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
 
-    # Ro'yxatdan o'tish jarayonida
     if await handle_registration_name(update, context):
         return
     if await handle_rop_password(update, context):
         return
 
-    # Raqam yuborilsa — savdo deb qabul qilish
     try:
         amount_str = text.replace('_', '').replace(' ', '').replace(',', '').strip()
         amount = int(amount_str)
-        if amount > 10000:  # 10,000 so'mdan katta bo'lsa savdo deb hisoblash
+        if amount > 10000:
             context.args = [amount_str]
             await savdo(update, context)
             return
@@ -759,13 +743,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = db.get_user(user_id)
     if not user:
-        await update.message.reply_text(
-            "👋 Ro'yxatdan o'tish uchun /start yuboring.",
-        )
+        await update.message.reply_text("👋 Ro'yxatdan o'tish uchun /start yuboring.")
     else:
-        await update.message.reply_text(
-            "❓ Buyruqlar uchun /help yuboring.",
-        )
+        await update.message.reply_text("❓ Buyruqlar uchun /help yuboring.")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -773,7 +753,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ═══════════════════════════════════════════════════════════
 
 async def send_evening_report(context: ContextTypes.DEFAULT_TYPE):
-    """Har kuni 18:00 da avtomatik hisobot"""
     rop_users = db.get_users_by_role('rop')
     supervisor_users = db.get_users_by_role('supervisor')
 
@@ -791,7 +770,6 @@ async def send_evening_report(context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Hisobot yuborishda xato {user['user_id']}: {e}")
 
-    # Agentlarga ham o'z natijasini yuborish
     agents = db.get_all_agents()
     for agent in agents:
         try:
@@ -820,18 +798,18 @@ async def send_evening_report(context: ContextTypes.DEFAULT_TYPE):
 
 
 # ═══════════════════════════════════════════════════════════
-# Main
+# Main — Webhook yoki Polling
 # ═══════════════════════════════════════════════════════════
 
 def main():
     token = Config.BOT_TOKEN
     if not token or token == "YOUR_BOT_TOKEN_HERE":
-        print("❌ BOT_TOKEN o'rnatilmagan! config.py ni tahrirlang.")
+        print("❌ BOT_TOKEN o'rnatilmagan!")
         return
 
     app = Application.builder().token(token).build()
 
-    # Buyruq handlerlari
+    # Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
     app.add_handler(CommandHandler("savdo", savdo))
@@ -844,30 +822,41 @@ def main():
     app.add_handler(CommandHandler("agentlar", agentlar))
     app.add_handler(CommandHandler("bonus", bonus))
 
-    # Callback (inline buttons)
     app.add_handler(CallbackQueryHandler(register_callback, pattern="^reg_"))
     app.add_handler(CallbackQueryHandler(update_sale_callback, pattern="^update_sale_|^cancel$"))
-
-    # Umumiy xabar
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Kunlik avtomatik hisobot: har kuni 18:00 Toshkent = 13:00 UTC
+    # Kunlik hisobot: 18:00 Toshkent = 13:00 UTC
     job_queue = app.job_queue
     job_queue.run_daily(
         send_evening_report,
-        time=datetime.strptime("13:00", "%H:%M").time(),  # UTC (Toshkent 18:00)
+        time=datetime.strptime("13:00", "%H:%M").time(),
         days=(0, 1, 2, 3, 4, 5, 6)
     )
 
-    print("🤖 Bot ishga tushdi!")
-    print("To'xtatish uchun Ctrl+C")
-    try:
-        app.run_polling(drop_pending_updates=True)
-    except Exception as e:
-        print(f"❌ Xato: {e}")
-        import traceback
-        traceback.print_exc()
+    print("🤖 Bot ishga tushdi! (Polling)")
+    app.run_polling(drop_pending_updates=True)
+
+
+def start_health_server():
+    import threading
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+
+    class HealthHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"OK - Bot ishlayapti!")
+        def log_message(self, format, *args):
+            pass
+
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    t = threading.Thread(target=server.serve_forever, daemon=True)
+    t.start()
+    print(f"✅ Health server port {port} da ishlamoqda")
 
 
 if __name__ == '__main__':
+    start_health_server()
     main()
