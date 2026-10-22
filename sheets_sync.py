@@ -29,10 +29,12 @@ def get_sheets_client():
             creds_dict = json.loads(creds_json)
             creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
         else:
-            # Lokal: fayl dan olish
-            creds = Credentials.from_service_account_file(
-                "google_credentials.json", scopes=scopes
-            )
+            # Render Secret Files yoki lokal fayl
+            import os.path
+            secret_path = "/etc/secrets/google_credentials.json"
+            local_path = "google_credentials.json"
+            filepath = secret_path if os.path.exists(secret_path) else local_path
+            creds = Credentials.from_service_account_file(filepath, scopes=scopes)
 
         client = gspread.authorize(creds)
         return client
