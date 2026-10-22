@@ -823,7 +823,7 @@ async def send_evening_report(context: ContextTypes.DEFAULT_TYPE):
 # Main
 # ═══════════════════════════════════════════════════════════
 
-async def main():
+def main():
     token = Config.BOT_TOKEN
     if not token or token == "YOUR_BOT_TOKEN_HERE":
         print("❌ BOT_TOKEN o'rnatilmagan! config.py ni tahrirlang.")
@@ -861,9 +861,13 @@ async def main():
 
     print("🤖 Bot ishga tushdi!")
     print("To'xtatish uchun Ctrl+C")
-    app.run_polling(drop_pending_updates=True)
+    try:
+        app.run_polling(drop_pending_updates=True)
+    except Exception as e:
+        print(f"❌ Xato: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main()) if hasattr(asyncio, 'run') else main()
+    main()
