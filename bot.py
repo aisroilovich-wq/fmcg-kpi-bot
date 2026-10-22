@@ -823,7 +823,7 @@ async def send_evening_report(context: ContextTypes.DEFAULT_TYPE):
 # Main
 # ═══════════════════════════════════════════════════════════
 
-def main():
+async def main():
     token = Config.BOT_TOKEN
     if not token or token == "YOUR_BOT_TOKEN_HERE":
         print("❌ BOT_TOKEN o'rnatilmagan! config.py ni tahrirlang.")
@@ -865,4 +865,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import asyncio
+    asyncio.run(main()) if hasattr(asyncio, 'run') else main()
