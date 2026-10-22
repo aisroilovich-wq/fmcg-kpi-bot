@@ -20,8 +20,9 @@ from database import Database
 from kpi_engine import KPIEngine
 from reports import ReportGenerator
 from config import Config
-from sheets_sync import (get_monthly_plan, get_sozlamalar,
-                         get_supervisor_report, get_rop_report, get_jamoa_hisobot)
+from sheets_sync import (get_monthly_plan, get_agent_data,
+                         get_supervisor_data, get_rop_data,
+                         get_ekspeditor_data, get_jamoa_hisobot)
 
 # Logging
 logging.basicConfig(
@@ -55,6 +56,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [
             [InlineKeyboardButton("🧑 Agent", callback_data="reg_agent")],
             [InlineKeyboardButton("👔 Supervisor", callback_data="reg_supervisor")],
+            [InlineKeyboardButton("🚚 Ekspeditor", callback_data="reg_ekspeditor")],
             [InlineKeyboardButton("🏆 ROP / Direktor", callback_data="reg_rop")],
         ]
         await update.message.reply_text(
@@ -72,7 +74,7 @@ async def register_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role = query.data.replace("reg_", "")
     context.user_data['pending_role'] = role
 
-    role_names = {"agent": "Agent", "supervisor": "Supervisor", "rop": "ROP/Direktor"}
+    role_names = {"agent": "Agent", "supervisor": "Supervisor", "rop": "ROP/Direktor", "ekspeditor": "Ekspeditor"}
     await query.edit_message_text(
         f"✅ Rol tanlandi: *{role_names[role]}*\n\n"
         f"Endi to'liq ismingizni yuboring:\n_(masalan: Alisher Nazarov)_",
@@ -683,29 +685,56 @@ async def sinxron(update: Update, context: ContextTypes.DEFAULT_TYPE):
     today = date.today()
 
     if role == 'agent':
-        # Agent: o'z oylik rejasi
+        # Agent: o'z varag'idagi ma'lumotlar
+        agent_data = get_agent_data(user['name'])
         plan_data = get_monthly_plan()
+
         if plan_data:
-            jamoa_reja = plan_data['jamoa_reja']
-            agent_soni = plan_data['agent_soni']
-            agent_plan = jamoa_reja // agent_soni if agent_soni > 0 else 0
-            daily_plan = agent_plan // Config.WORKING_DAYS
-            db.set_monthly_plan(today.year, today.month, jamoa_reja, user_id)
+            db.set_monthly_plan(today.year, today.month, plan_data['jamoa_reja'], user_id)
+
+        if agent_data:
+            oylik_reja = agent_data.get('oylik_reja') or 0
+            kunlik_reja = agent_data.get('kunlik_reja') or 0
+            jami_savdo = agent_data.get('jami_savdo', 0)
+            kun_soni = agent_data.get('kun_soni', 0)
+            reja_pct = round(jami_savdo / oylik_reja * 100, 1) if oylik_reja > 0 else 0
+            status = "✅" if reja_pct >= 100 else ("🟡" if reja_pct >= 80 else "🔴")
+
             text = (
-                f"📊 *{user['name']} — Reja ma'lumotlari*\n\n"
-                f"📋 Sizning oylik reja: *{agent_plan:,} so'm*\n"
-                f"📅 Kunlik reja: *{daily_plan:,} so'm*\n"
-                f"👥 Jamoada: {agent_soni} ta agent\n\n"
-                f"_Google Sheets dan yangilandi ✅_"
+                f"📊 *{user['name']} — Sheets hisobot*\n\n"
+                f"📅 *Oylik natija:*\n"
+                f"💰 Jami savdo: *{jami_savdo:,} so'm*\n"
+                f"📋 Oylik reja: {oylik_reja:,} so'm\n"
+                f"{status} Bajarildi: *{reja_pct}%*\n"
+                f"📆 Ish kunlari: {kun_soni} kun\n\n"
+                f"📌 Kunlik reja: {kunlik_reja:,} so'm\n"
             )
+
+            # Oxirgi 3 kun
+            kunlar = agent_data.get('kunlar', [])
+            if kunlar:
+                text += f"\n📆 *Oxirgi kunlar:*\n"
+                for k in kunlar[-3:]:
+                    st = k.get('status', '')
+                    emoji = "✅" if "BAJARILDI" in str(st) else ("🟡" if "YAQIN" in str(st) else "🔴")
+                    text += f"{emoji} {k['kun']}-kun: {k['savdo']:,} so'm\n"
         else:
-            text = "⚠️ Google Sheets dan ma'lumot olinmadi."
+            text = (
+                f"📊 *{user['name']}*\n\n"
+                f"⚠️ Sheets da varaq topilmadi.\n"
+                f"Varaqda D2 katakka ismingiz yozilganmi?\n\n"
+            )
+            if plan_data:
+                agent_soni = plan_data['agent_soni']
+                agent_plan = plan_data['jamoa_reja'] // agent_soni if agent_soni > 0 else 0
+                text += f"📋 Oylik reja (umumiy): {agent_plan:,} so'm"
+
+        text += "\n\n_Google Sheets dan yangilandi ✅_"
         await update.message.reply_text(text, parse_mode='Markdown')
 
     elif role == 'supervisor':
         # Supervisor: jamoa holati + o'z maoshi
-        sup_data = get_supervisor_report()
-        jamoa_data = get_jamoa_hisobot()
+        sup_data = get_supervisor_data(user['name'])
         plan_data = get_monthly_plan()
 
         if plan_data:
@@ -713,32 +742,29 @@ async def sinxron(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text = f"👔 *{user['name']} — Supervisor hisobot*\n\n"
 
-        if jamoa_data:
-            status = "✅" if jamoa_data.get('bajarilish_pct', 0) >= 100 else (
-                "🟡" if jamoa_data.get('bajarilish_pct', 0) >= 80 else "🔴")
+        if sup_data:
+            status = "✅" if sup_data.get('bajarilish_pct', 0) >= 100 else (
+                "🟡" if sup_data.get('bajarilish_pct', 0) >= 80 else "🔴")
             text += (
                 f"📈 *Jamoa natija:*\n"
-                f"🎯 Reja: {jamoa_data.get('jamoa_reja', 0):,} so'm\n"
-                f"💰 Haqiqiy: {jamoa_data.get('haqiqiy_savdo', 0):,} so'm\n"
-                f"{status} Bajarildi: {jamoa_data.get('bajarilish_pct', 0)}%\n\n"
-            )
-
-        if sup_data:
-            text += (
+                f"🎯 Reja: {sup_data.get('jamoa_reja', 0):,} so'm\n"
+                f"💰 Haqiqiy: {sup_data.get('jamoa_savdo', 0):,} so'm\n"
+                f"{status} Bajarildi: {sup_data.get('bajarilish_pct', 0)}%\n\n"
                 f"💵 *Sizning maoshingiz:*\n"
                 f"├ Fiksa: {sup_data.get('fiksa', 0):,} so'm\n"
                 f"├ Komanda bonus: {sup_data.get('komanda_bonus', 0):,} so'm\n"
                 f"├ Plan bonus: {sup_data.get('plan_bonus', 0):,} so'm\n"
                 f"└ *JAMI: {sup_data.get('jami', 0):,} so'm*\n"
             )
+        else:
+            text += "⚠️ Supervisor ma'lumotlari olinmadi.\n"
 
         text += "\n_Google Sheets dan yangilandi ✅_"
         await update.message.reply_text(text, parse_mode='Markdown')
 
     else:  # rop
         # ROP: hammasi
-        rop_data = get_rop_report()
-        jamoa_data = get_jamoa_hisobot()
+        rop_data = get_rop_data()
         plan_data = get_monthly_plan()
 
         if plan_data:
@@ -746,35 +772,31 @@ async def sinxron(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         text = f"🏆 *{user['name']} — ROP to'liq hisobot*\n\n"
 
-        if jamoa_data:
-            status = "✅" if jamoa_data.get('bajarilish_pct', 0) >= 100 else (
-                "🟡" if jamoa_data.get('bajarilish_pct', 0) >= 80 else "🔴")
+        if rop_data:
+            status = "✅" if rop_data.get('bajarilish_pct', 0) >= 100 else (
+                "🟡" if rop_data.get('bajarilish_pct', 0) >= 80 else "🔴")
             text += (
                 f"📈 *Jamoa natija:*\n"
-                f"🎯 Reja: {jamoa_data.get('jamoa_reja', 0):,} so'm\n"
-                f"💰 Haqiqiy: {jamoa_data.get('haqiqiy_savdo', 0):,} so'm\n"
-                f"{status} Bajarildi: {jamoa_data.get('bajarilish_pct', 0)}%\n"
-                f"👥 Agentlar: {jamoa_data.get('agent_soni', 0)} ta\n\n"
-            )
-
-        if rop_data:
-            text += (
+                f"🎯 Reja: {rop_data.get('jamoa_reja', 0):,} so'm\n"
+                f"💰 Haqiqiy: {rop_data.get('jamoa_savdo', 0):,} so'm\n"
+                f"{status} Bajarildi: {rop_data.get('bajarilish_pct', 0)}%\n\n"
                 f"💵 *ROP maoshi:*\n"
                 f"├ Fiksa: {rop_data.get('fiksa', 0):,} so'm\n"
                 f"├ Jamoa bonusi (2%): {rop_data.get('jamoa_bonus', 0):,} so'm\n"
                 f"├ Plan bonusi: {rop_data.get('plan_bonus', 0):,} so'm\n"
                 f"├ Spets zadacha: {rop_data.get('spets_bonus', 0):,} so'm\n"
-                f"└ *JAMI: {rop_data.get('jami', 0):,} so'm*\n\n"
-                f"📊 Bajarilish: {rop_data.get('bajarilish_pct', 0)}%\n"
+                f"└ *JAMI: {rop_data.get('jami', 0):,} so'm*\n"
             )
 
         if plan_data:
-            agent_plan = plan_data['jamoa_reja'] // plan_data['agent_soni'] if plan_data['agent_soni'] > 0 else 0
+            agent_soni = plan_data['agent_soni']
+            agent_plan = plan_data['jamoa_reja'] // agent_soni if agent_soni > 0 else 0
             text += (
                 f"\n📋 *Reja taqsimoti:*\n"
                 f"🏢 Jamoa: {plan_data['jamoa_reja']:,} so'm\n"
                 f"👤 1 agent: {agent_plan:,} so'm\n"
                 f"📅 Kunlik: {agent_plan // Config.WORKING_DAYS:,} so'm\n"
+                f"👥 Agentlar: {agent_soni} ta\n"
             )
 
         text += "\n_Google Sheets dan yangilandi ✅_"
