@@ -94,8 +94,9 @@ def main_menu(role: str) -> ReplyKeyboardMarkup:
     elif role == "rop":
         buttons = [
             [KeyboardButton("🏆 Umumiy hisobot")],
-            [KeyboardButton("👔 S1 jamoasi"), KeyboardButton("👔 S2 jamoasi")],
-            [KeyboardButton("👔 S3 jamoasi")],
+            [KeyboardButton("👔 S1"), KeyboardButton("👔 S2"), KeyboardButton("👔 S3")],
+            [KeyboardButton("🤖 Agentlar ro'yxati")],
+            [KeyboardButton("🚚 Ekspeditorlar")],
             [KeyboardButton("🔄 Yangilash")]
         ]
     else:
@@ -339,6 +340,65 @@ async def sup_jamoa(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet_na
         await msg.edit_text(f"❌ Xato: {e}")
 
 
+async def agentlar_royxati(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ROP — barcha agentlar ro'yxati"""
+    msg = await update.message.reply_text("⏳ Agentlar yuklanmoqda...")
+    try:
+        sh = sheets_sync.get_spreadsheet()
+        if not sh:
+            await msg.edit_text("❌ Google Sheets ulanmadi.")
+            return
+        all_sheets = [ws.title for ws in sh.worksheets()]
+        agent_sheets = [n for n in all_sheets if '🤖' in n]
+
+        lines = ["🤖 *Barcha agentlar*\n"]
+        for sheet_name in agent_sheets:
+            try:
+                ws = sh.worksheet(sheet_name)
+                name = ws.acell('D2', value_render_option='UNFORMATTED_VALUE').value or sheet_name
+                meta = ws.get('D3:G3', value_render_option='UNFORMATTED_VALUE')
+                oylik_reja = sheets_sync.safe_int(meta[0][0]) if meta and meta[0] else 0
+                rows = ws.get('F5:F30', value_render_option='UNFORMATTED_VALUE')
+                jami = sum(sheets_sync.safe_int(r[0]) for r in rows if r and r[0])
+                pct = round(jami / oylik_reja * 100, 1) if oylik_reja > 0 else 0
+                lines.append(f"• *{name}*: {fmt(jami)} ({pct}%)")
+            except:
+                continue
+
+        await msg.edit_text("\n".join(lines), parse_mode="Markdown")
+    except Exception as e:
+        await msg.edit_text(f"❌ Xato: {e}")
+
+
+async def ekspeditorlar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ROP — barcha ekspeditorlar"""
+    msg = await update.message.reply_text("⏳ Ekspeditorlar yuklanmoqda...")
+    try:
+        sh = sheets_sync.get_spreadsheet()
+        if not sh:
+            await msg.edit_text("❌ Google Sheets ulanmadi.")
+            return
+        all_sheets = [ws.title for ws in sh.worksheets()]
+        exp_sheets = [n for n in all_sheets if '🚚' in n]
+
+        lines = ["🚚 *Barcha ekspeditorlar*\n"]
+        for sheet_name in exp_sheets:
+            try:
+                ws = sh.worksheet(sheet_name)
+                name = ws.acell('D2', value_render_option='UNFORMATTED_VALUE').value or sheet_name
+                vals = ws.get('B3:B13', value_render_option='UNFORMATTED_VALUE')
+                yetkazilgan = sheets_sync.safe_int(vals[1][0]) if len(vals) > 1 and vals[1] else 0
+                reja = sheets_sync.safe_int(vals[2][0]) if len(vals) > 2 and vals[2] else 0
+                pct = round(yetkazilgan / reja * 100, 1) if reja > 0 else 0
+                lines.append(f"• *{name}*: {fmt(yetkazilgan)}/{fmt(reja)} ({pct}%)")
+            except:
+                continue
+
+        await msg.edit_text("\n".join(lines), parse_mode="Markdown")
+    except Exception as e:
+        await msg.edit_text(f"❌ Xato: {e}")
+
+
 async def yangilash(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await hisobotim(update, context)
 
@@ -374,12 +434,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await hisobotim(update, context)
     elif text == "🏆 Umumiy hisobot":
         await umumiy_hisobot(update, context)
-    elif text == "👔 S1 jamoasi":
+    elif text == "👔 S1":
         await sup_jamoa(update, context, "👔 S1")
-    elif text == "👔 S2 jamoasi":
+    elif text == "👔 S2":
         await sup_jamoa(update, context, "👔 S2")
-    elif text == "👔 S3 jamoasi":
+    elif text == "👔 S3":
         await sup_jamoa(update, context, "👔 S3")
+    elif text == "🤖 Agentlar ro'yxati":
+        await agentlar_royxati(update, context)
+    elif text == "🚚 Ekspeditorlar":
+        await ekspeditorlar(update, context)
 
 
 # ─── Health server ───────────────────────────────────────────────────────────
