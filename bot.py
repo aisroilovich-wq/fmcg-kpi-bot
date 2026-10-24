@@ -93,7 +93,9 @@ def main_menu(role: str) -> ReplyKeyboardMarkup:
         ]
     elif role == "rop":
         buttons = [
-            [KeyboardButton("🏆 Umumiy hisobot"), KeyboardButton("📊 Barcha jamoalar")],
+            [KeyboardButton("🏆 Umumiy hisobot")],
+            [KeyboardButton("👔 S1 jamoasi"), KeyboardButton("👔 S2 jamoasi")],
+            [KeyboardButton("👔 S3 jamoasi")],
             [KeyboardButton("🔄 Yangilash")]
         ]
     else:
@@ -298,36 +300,43 @@ async def umumiy_hisobot(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await msg.edit_text("❌ Ma'lumot topilmadi.", parse_mode="Markdown")
 
 
-async def barcha_jamoalar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """ROP — barcha jamoalar"""
-    tg_id = update.effective_user.id
-    user = get_user(tg_id)
-    if not user or user["role"] != "rop":
-        return
+async def sup_jamoa(update: Update, context: ContextTypes.DEFAULT_TYPE, sheet_name: str):
+    """ROP — bitta supervisor jamoasi"""
+    msg = await update.message.reply_text("⏳ Ma'lumotlar yuklanmoqda...")
+    try:
+        sh = sheets_sync.get_spreadsheet()
+        if not sh:
+            await msg.edit_text("❌ Google Sheets ulanmadi.")
+            return
+        ws = sh.worksheet(sheet_name)
+        vals = ws.get('B3:B11', value_render_option='UNFORMATTED_VALUE')
 
-    msg = await update.message.reply_text("⏳ Barcha jamoalar yuklanmoqda...")
+        def v(i):
+            return sheets_sync.safe_int(vals[i][0]) if len(vals) > i and vals[i] else 0
 
-    sh = sheets_sync.get_spreadsheet()
-    if not sh:
-        await msg.edit_text("❌ Google Sheets ulanmadi.")
-        return
+        jamoa_savdo = v(1)
+        jamoa_reja = v(2)
+        fiksa = v(5)
+        komanda_bonus = v(6)
+        plan_bonus = v(7)
+        bajarilish = round(jamoa_savdo / jamoa_reja * 100, 1) if jamoa_reja > 0 else 0
+        bar = progress_bar(bajarilish)
 
-    all_sheets = [ws.title for ws in sh.worksheets()]
-    sup_sheets = [n for n in all_sheets if '👔' in n]
-
-    lines = ["📊 *Barcha jamoalar hisoboti*\n"]
-    for sheet_name in sup_sheets:
-        try:
-            ws = sh.worksheet(sheet_name)
-            vals = ws.get('B3:B11', value_render_option='UNFORMATTED_VALUE')
-            jamoa_savdo = sheets_sync.safe_int(vals[1][0]) if len(vals) > 1 and vals[1] else 0
-            jamoa_reja = sheets_sync.safe_int(vals[2][0]) if len(vals) > 2 and vals[2] else 0
-            pct = round(jamoa_savdo / jamoa_reja * 100, 1) if jamoa_reja > 0 else 0
-            lines.append(f"*{sheet_name}*: {fmt(jamoa_savdo)} / {fmt(jamoa_reja)} ({pct}%)")
-        except:
-            continue
-
-    await msg.edit_text("\n".join(lines), parse_mode="Markdown")
+        text = (
+            f"👔 *{sheet_name} — Jamoa hisoboti*\n\n"
+            f"💼 Jamoa savdo: *{fmt(jamoa_savdo)}* so'm\n"
+            f"🎯 Jamoa reja: *{fmt(jamoa_reja)}* so'm\n"
+            f"📈 Bajarilish: *{bajarilish}%*\n"
+            f"{bar}\n\n"
+            f"💵 Fiksa: *{fmt(fiksa)}* so'm\n"
+            f"🤝 Komanda bonus: *{fmt(komanda_bonus)}* so'm\n"
+            f"⭐ Plan bonus: *{fmt(plan_bonus)}* so'm\n"
+            f"━━━━━━━━━━━━━\n"
+            f"💎 Jami: *{fmt(fiksa + komanda_bonus + plan_bonus)}* so'm"
+        )
+        await msg.edit_text(text, parse_mode="Markdown")
+    except Exception as e:
+        await msg.edit_text(f"❌ Xato: {e}")
 
 
 async def yangilash(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -355,8 +364,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await hisobotim(update, context)
     elif text == "🏆 Umumiy hisobot":
         await umumiy_hisobot(update, context)
-    elif text == "📊 Barcha jamoalar":
-        await barcha_jamoalar(update, context)
+    elif text == "👔 S1 jamoasi":
+        await sup_jamoa(update, context, "👔 S1")
+    elif text == "👔 S2 jamoasi":
+        await sup_jamoa(update, context, "👔 S2")
+    elif text == "👔 S3 jamoasi":
+        await sup_jamoa(update, context, "👔 S3")
 
 
 # ─── Health server ───────────────────────────────────────────────────────────
